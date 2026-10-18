@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import repository as repo
-from .db import get_conn
+from .db import get_conn, run_script
 from .repository import DomainError
 
 app = FastAPI(
@@ -29,6 +29,24 @@ app = FastAPI(
 )
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+SQL_DIR = Path(__file__).resolve().parent.parent / "sql"
+
+
+@app.on_event("startup")
+def auto_init_db() -> None:
+    """Create the schema on first boot so a fresh hosted database works
+    without a manual step. Set AUTO_INIT_DB=0 to disable."""
+    if os.getenv("AUTO_INIT_DB", "1") != "1":
+        return
+    try:
+        with get_conn() as conn:
+            tables = {list(r.values())[0] for r in repo.query(conn, "SHOW TABLES")}
+            if "book" in tables:
+                return
+            run_script(conn, str(SQL_DIR / "schema.sql"))
+            run_script(conn, str(SQL_DIR / "seed.sql"))
+    except pymysql.MySQLError as exc:  # pragma: no cover - logged, app still starts
+        print(f"[auto_init_db] skipped: {exc}")
 
 
 # --- schemas --------------------------------------------------------------
