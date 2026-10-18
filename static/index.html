@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bookshelf</title>
+<style>
+  :root { --bg:#faf8f3; --ink:#1f1d1a; --muted:#6b665e; --line:#e4dfd5; --card:#fff; --accent:#2f5d50; --danger:#a33a2a; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17161a; --ink:#ece8e0; --muted:#a09a90; --line:#2d2b31; --card:#1f1e23; --accent:#7fbfae; --danger:#e07a6a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 20px 16px 8px; max-width: 920px; margin: 0 auto; }
+  h1 { margin:0; font-size: 22px; letter-spacing: .2px; }
+  h1 small { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
+  main { max-width: 920px; margin: 0 auto; padding: 0 16px 48px; display: grid; gap: 16px; }
+  .bar { display:flex; gap:8px; flex-wrap: wrap; }
+  input, select, textarea, button { font: inherit; color: inherit; }
+  input, select, textarea { background: var(--card); border:1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  input[type=text], input[type=search] { flex: 1 1 160px; min-width: 0; }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  button.danger { background: transparent; color: var(--danger); border: 1px solid var(--line); }
+  .card { background: var(--card); border:1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .book { display: grid; gap: 6px; }
+  .book .t { font-weight: 600; }
+  .book .m { color: var(--muted); font-size: 13px; }
+  .book .row { display:flex; gap:8px; align-items:center; flex-wrap: wrap; margin-top: 4px; }
+  .pill { display:inline-block; border:1px solid var(--line); border-radius: 999px; padding: 1px 9px; font-size: 12px; color: var(--muted); }
+  .reviews { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+  .reviews li b { color: var(--ink); }
+  form.add { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
+  form.add .full { grid-column: 1 / -1; }
+  #msg { min-height: 1.4em; font-size: 14px; color: var(--muted); }
+  #msg.err { color: var(--danger); }
+  details summary { cursor: pointer; color: var(--accent); }
+  textarea { width: 100%; min-height: 56px; }
+  .revform { display:none; gap:6px; margin-top:6px; }
+  .revform.open { display:grid; }
+</style>
+</head>
+<body>
+<header><h1>Bookshelf <small>FastAPI + MySQL · <a href="/docs">API docs</a></small></h1></header>
+<main>
+  <div class="bar">
+    <input id="q" type="search" placeholder="Search title…">
+    <input id="qa" type="search" placeholder="Search author…">
+    <button id="go">Search</button>
+    <button id="clear" class="ghost">All books</button>
+  </div>
+  <div id="msg"></div>
+  <div id="list" style="display:grid; gap:10px"></div>
+
+  <details class="card">
+    <summary>Add a book</summary>
+    <form class="add" id="addBook" style="margin-top:10px">
+      <input name="title" placeholder="Title" required maxlength="200">
+      <input name="english_title" placeholder="English title (optional)" maxlength="200">
+      <input name="author" placeholder="Author" required maxlength="120">
+      <input name="genre" placeholder="Genre (new or existing)" required maxlength="60" list="genres">
+      <select name="status" id="statusSel" required></select>
+      <button class="full">Add book</button>
+    </form>
+    <datalist id="genres"></datalist>
+  </details>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const msg = (t, err=false) => { const m = $('#msg'); m.textContent = t || ''; m.className = err ? 'err' : ''; };
+let statuses = [];
+let lastParams = null;
+
+async function api(path, opts={}) {
+  const r = await fetch(path, { headers: {'Content-Type':'application/json'}, ...opts });
+  if (r.status === 204) return null;
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail || r.statusText));
+  return body;
+}
+
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function bookCard(b) {
+  const opts = statuses.map(s => `<option ${s.name===b.status?'selected':''}>${esc(s.name)}</option>`).join('');
+  const reviews = (b.reviews||[]).map(r => `<li><b>${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</b> ${esc(r.notes||'')}</li>`).join('');
+  return `<div class="card book" data-id="${b.book_id}">
+    <div class="t">${esc(b.title)} ${b.english_title && b.english_title!==b.title ? `<span class="m">· ${esc(b.english_title)}</span>`:''}</div>
+    <div class="m">${esc((b.authors||[]).join(', ') || 'Unknown author')} <span class="pill">${esc(b.genre||'—')}</span></div>
+    <div class="row">
+      <label class="m">Status <select class="st">${opts}</select></label>
+      <button class="ghost rev">+ Review</button>
+      <button class="danger del">Delete</button>
+    </div>
+    ${reviews ? `<ul class="reviews">${reviews}</ul>` : ''}
+    <form class="revform">
+      <label class="m">Rating <select name="rating">${[5,4,3,2,1].map(n=>`<option>${n}</option>`).join('')}</select></label>
+      <textarea name="notes" placeholder="Notes (optional)" maxlength="1000"></textarea>
+      <div class="row"><button>Save review</button><button type="button" class="ghost cancel">Cancel</button></div>
+    </form>
+  </div>`;
+}
+
+async function load(params) {
+  if (params !== undefined) lastParams = params;
+  params = lastParams;
+  msg('Loading…');
+  try {
+    const qs = params ? '?' + new URLSearchParams(params) : '';
+    const books = await api('/api/books' + qs);
+    // list endpoint has no reviews; fetch details in parallel (small demo data set)
+    const full = await Promise.all(books.map(b => api('/api/books/' + b.book_id)));
+    $('#list').innerHTML = full.map(bookCard).join('') || '<div class="card m">No books found.</div>';
+    msg(`${full.length} book${full.length===1?'':'s'}`);
+  } catch (e) { msg(e.message, true); }
+}
+
+async function init() {
+  try {
+    statuses = await api('/api/statuses');
+    $('#statusSel').innerHTML = statuses.map(s => `<option>${esc(s.name)}</option>`).join('');
+    const genres = await api('/api/genres');
+    $('#genres').innerHTML = genres.map(g => `<option value="${esc(g.name)}">`).join('');
+  } catch (e) { msg(e.message, true); }
+  load(null);
+}
+
+$('#go').onclick = () => { const q = $('#q').value.trim(), a = $('#qa').value.trim(); load(q ? {q} : a ? {author:a} : null); };
+$('#clear').onclick = () => { $('#q').value=''; $('#qa').value=''; load(null); };
+$('#q').onkeydown = $('#qa').onkeydown = e => { if (e.key==='Enter') $('#go').click(); };
+
+$('#addBook').onsubmit = async e => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  try { await api('/api/books', {method:'POST', body: JSON.stringify(f)}); e.target.reset(); msg('Book added.'); load(); }
+  catch (err) { msg(err.message, true); }
+};
+
+$('#list').addEventListener('change', async e => {
+  if (!e.target.classList.contains('st')) return;
+  const id = e.target.closest('.book').dataset.id;
+  try { await api(`/api/books/${id}/status`, {method:'PATCH', body: JSON.stringify({status: e.target.value})}); msg('Status updated.'); }
+  catch (err) { msg(err.message, true); load(); }
+});
+
+$('#list').addEventListener('click', async e => {
+  const card = e.target.closest('.book'); if (!card) return;
+  const id = card.dataset.id;
+  if (e.target.classList.contains('rev')) { card.querySelector('.revform').classList.add('open'); }
+  if (e.target.classList.contains('cancel')) { card.querySelector('.revform').classList.remove('open'); }
+  if (e.target.classList.contains('del')) {
+    try { await api(`/api/books/${id}`, {method:'DELETE'}); msg('Book deleted.'); load(); }
+    catch (err) { msg(err.message, true); }   // e.g. "Cannot delete book with reviews" from the DB trigger
+  }
+});
+
+$('#list').addEventListener('submit', async e => {
+  if (!e.target.classList.contains('revform')) return;
+  e.preventDefault();
+  const id = e.target.closest('.book').dataset.id;
+  const f = Object.fromEntries(new FormData(e.target));
+  try { await api(`/api/books/${id}/reviews`, {method:'POST', body: JSON.stringify({rating: Number(f.rating), notes: f.notes || null})}); msg('Review saved.'); load(); }
+  catch (err) { msg(err.message, true); }
+});
+
+init();
+</script>
+</body>
+</html>
