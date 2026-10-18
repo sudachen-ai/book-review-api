@@ -40,8 +40,7 @@ pip install -r requirements.txt
 cp .env.example .env        # edit if your MySQL differs
 export $(cat .env | xargs)
 mysql -u root -p -e "CREATE DATABASE bookreview; CREATE USER 'app'@'localhost' IDENTIFIED BY 'apppass'; GRANT ALL ON bookreview.* TO 'app'@'localhost';"
-python scripts/init_db.py   # tables + triggers + procedures + sample data
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload   # first start creates tables, triggers, procedures, and sample data
 # open http://127.0.0.1:8000
 ```
 
@@ -56,8 +55,9 @@ pytest -q                   # resets the schema in MYSQL_DB, then runs 10 end-to
 
 1. **Database** — create a free MySQL on [Aiven](https://aiven.io) (real MySQL 8, triggers and procedures supported).
    Copy host, port, user, password, database name. TLS is required (`MYSQL_SSL=1`).
-2. **Load the schema** from your laptop:
-   `MYSQL_HOST=… MYSQL_PORT=… MYSQL_USER=… MYSQL_PASSWORD=… MYSQL_DB=… MYSQL_SSL=1 python scripts/init_db.py`
+2. **Schema** — nothing to do. On startup the app checks for the `book` table and, if the
+   database is empty, runs `sql/schema.sql` and `sql/seed.sql` itself (`AUTO_INIT_DB=1`, the default).
+   `scripts/init_db.py` is still there for a manual reset.
 3. **Web service** — push this repo to GitHub, then on [Render](https://render.com)
    choose *New → Blueprint*, pick the repo, and fill in the `MYSQL_*` secrets when asked.
    Render builds the Dockerfile and serves the app on a public URL.
