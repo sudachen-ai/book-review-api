@@ -6,7 +6,9 @@ run against a real MySQL/MariaDB. All writes go through the course's
 stored procedures; MySQL triggers enforce the rating range (1–5) and block
 deleting a book that still has reviews.
 
-**Live demo:** _(add URL after deploy)_ · **API docs:** `/docs`
+**Live demo:** https://book-review-api-snqu.onrender.com · **API docs:** https://book-review-api-snqu.onrender.com/docs
+
+_Free tier: the first request after idle can take ~50 s while the service and database wake up._
 
 ## Stack
 
@@ -61,7 +63,7 @@ pytest -q                   # resets the schema in MYSQL_DB, then runs 10 end-to
 3. **Web service** — push this repo to GitHub, then on [Render](https://render.com)
    choose *New → Blueprint*, pick the repo, and fill in the `MYSQL_*` secrets when asked.
    Render builds the Dockerfile and serves the app on a public URL.
-4. Put the URL in this README and on the resume.
+4. Put the URL in this README and on the resume. (Done: see the top of this file.)
 
 ## Project layout
 
